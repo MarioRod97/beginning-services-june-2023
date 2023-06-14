@@ -1,4 +1,5 @@
-﻿using IssueTrackerApi.Models;
+﻿using IssueTrackerApi.Adapters;
+using IssueTrackerApi.Models;
 using Marten;
 using Microsoft.AspNetCore.Mvc;
 
@@ -8,10 +9,12 @@ namespace IssueTrackerApi.Controllers;
 public class IssuesController : ControllerBase
 {
     private readonly IDocumentStore _documentStore;
+    private readonly BusinessApiAdapter _businessApi;
 
-    public IssuesController(IDocumentStore documentStore)
+    public IssuesController(IDocumentStore documentStore, BusinessApiAdapter businessApi)
     {
         _documentStore = documentStore;
+        _businessApi = businessApi;
     }
 
     [HttpGet("/open-issues")]
@@ -26,27 +29,41 @@ public class IssuesController : ControllerBase
     [HttpPost("/open-issues")]
     public async Task<ActionResult> AddAnIssue([FromBody] IssueCreateRequest request)
     {
-        // Validate it. if invalid, return a 400
-        if(!ModelState.IsValid)
-        {
-            return BadRequest();
-        }
-        // If it is good, create an issue response
+        // Validate it. if invalid, return a 400.
+        //if(!ModelState.IsValid)
+        //{
+        // return BadRequest(ModelState);
+        //}
+        // If it's good, create an issueresponse
         // Save it to the database
-        // Send them a copy of it
+        // send them a copy of it.
 
         var response = new IssueCreatedResponse
         {
             Id = Guid.NewGuid(),
             Issue = request.Issue,
             From = request.From,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
         };
 
         using var session = _documentStore.LightweightSession();
         session.Insert(response);
+
         await session.SaveChangesAsync();
 
-        return Ok(response);
+        var supportInfo = await _businessApi.GetClockResponseAsync();
+
+        var actualResponse = new IssueCreatedResponseWithSupportInfo
+        {
+            Issue = response,
+            Support = new SupportModel
+            {
+                IsOpenNow = supportInfo.IsOpen,
+                OpensAt = supportInfo.IsOpen ? null : supportInfo.NextOpenTime,
+                SupportNumber = "(800) 555-5555"
+            }
+        };
+
+        return Ok(actualResponse);
     }
 }
